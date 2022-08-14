@@ -1,8 +1,57 @@
-pub struct Pattern {}
+use std::collections::HashSet;
+
+#[derive(Debug)]
+enum PatternType {
+    Set{one_of: HashSet<u8>, min_count: u8, max_count: u8},
+    Range{between: (u8, u8), min_count: u8, max_count: u8}
+}
+
+pub struct Pattern(Vec<PatternType>);
 
 impl Pattern {
     pub fn new(pattern: &str) -> Self {
-        todo!("add string to pattern constructor here")
+        let mut patterns = Vec::new();
+        let mut pattern = pattern.as_bytes();
+
+        // extracted common code used within this function into an internal function for reuse.
+        fn extract_counts(mut pattern: &[u8], num_start_pos: usize) -> (u8, u8, usize) {
+            pattern = &pattern[num_start_pos..];
+            let num_sep_pos = pattern.iter().position(|x| *x == b',').expect("expected comma separator for number range, invalid pattern");
+            let brack_close_pos = pattern[(num_sep_pos+1)..].iter().position(|x| *x == b'}').expect("expected } at end, invalid pattern") + num_sep_pos+1;
+            let min_count = std::str::from_utf8(&pattern[..num_sep_pos]).unwrap().parse().expect("expected valid number");
+            let max_count = std::str::from_utf8(&pattern[(num_sep_pos+1)..brack_close_pos]).unwrap().parse().expect("expected valid number");
+            (min_count, max_count, num_start_pos + brack_close_pos)
+        }
+
+        // convert input into a vec of PatternType by extracting 1 pattern at a time
+        while pattern.len() > 0 {
+            assert_eq!(pattern[0], b'[', "invalid pattern");
+            pattern = if pattern[2] == b'-' {
+                // range pattern
+                assert!(pattern[4] == b']' && pattern[5] == b'{', "invalid pattern");
+                let (min_count, max_count, end_pos) = extract_counts(pattern, 6);
+                patterns.push(PatternType::Range { between: (pattern[1], pattern[3]), min_count, max_count });
+                &pattern[(end_pos+1)..]
+            } else {
+                // set pattern
+                assert!(pattern[2] == b',' || pattern[2] == b']', "invalid pattern");
+                let mut char_set = HashSet::new();
+                let mut p_iter = pattern.iter().enumerate();
+                p_iter.next(); // ignore first [
+                let num_start_pos = loop {
+                    let (_, c) = p_iter.next().expect("pattern unexpectedly ended");
+                    char_set.insert(*c);
+                    let (ni, nc) = p_iter.next().filter(|(_, x)| **x == b',' || **x == b']').expect("expected , or ] after char, invalid pattern");
+                    if *nc == b']' {
+                        break ni+2;
+                    }
+                };
+                let (min_count, max_count, end_pos) = extract_counts(pattern, num_start_pos);
+                patterns.push(PatternType::Set { one_of: char_set, min_count, max_count });
+                &pattern[(end_pos+1)..]
+            }
+        }
+        Pattern(patterns)
     }
 
     pub fn find_matches<'s, 'i>(&'s self, inp: &'i str) -> Vec<&'i str> {
