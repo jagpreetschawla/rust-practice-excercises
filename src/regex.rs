@@ -43,6 +43,14 @@ impl SubPattern {
         }
     }
 
+    fn allows_zero_length(&self) -> bool {
+        let min_allowed = match self {
+            SubPattern::Set { min_count, .. } => min_count,
+            SubPattern::Range { min_count, .. } => min_count,
+        };
+        *min_allowed == 0u8
+    }
+
     fn check_count(&self, count: u8) -> MatchCountStatus {
         match self {
             SubPattern::Set {
@@ -85,7 +93,7 @@ impl<'a> PatternState<'a> {
 
     fn next_sub_pattern(&self) -> Option<Self> {
         let next_index = self.subpattern_index + 1;
-        if next_index == self.pattern.0.len() {
+        if next_index == self.pattern.subpatterns.len() {
             None
         } else {
             Some(Self {
@@ -96,8 +104,12 @@ impl<'a> PatternState<'a> {
         }
     }
 
+    fn remaining_can_be_zero_len(&self) -> bool {
+        self.subpattern_index >= self.pattern.opt_suffix_start_idx
+    }
+
     fn update(mut self, c: u8) -> StateStatus<'a> {
-        let subpattern = &self.pattern.0[self.subpattern_index];
+        let subpattern = &self.pattern.subpatterns[self.subpattern_index];
         if subpattern.matches(c) {
             self.matched_count += 1;
             match subpattern.check_count(self.matched_count) {
@@ -113,11 +125,14 @@ impl<'a> PatternState<'a> {
 }
 
 #[derive(Debug)]
-pub struct Pattern(Vec<SubPattern>);
+pub struct Pattern{
+    subpatterns: Vec<SubPattern>,
+    opt_suffix_start_idx: usize
+}
 
 impl Pattern {
     pub fn new(pattern: &str) -> Self {
-        let mut patterns = Vec::new();
+        let mut subpatterns = Vec::new();
         let mut pattern = pattern.as_bytes();
 
         // extracted common code used within this function into an internal function for reuse.
@@ -151,7 +166,7 @@ impl Pattern {
                 // range pattern
                 assert!(pattern[4] == b']' && pattern[5] == b'{', "invalid pattern");
                 let (min_count, max_count, end_pos) = extract_counts(pattern, 6);
-                patterns.push(SubPattern::Range {
+                subpatterns.push(SubPattern::Range {
                     between: (pattern[1], pattern[3]),
                     min_count,
                     max_count,
@@ -175,7 +190,7 @@ impl Pattern {
                     }
                 };
                 let (min_count, max_count, end_pos) = extract_counts(pattern, num_start_pos);
-                patterns.push(SubPattern::Set {
+                subpatterns.push(SubPattern::Set {
                     one_of: char_set,
                     min_count,
                     max_count,
@@ -183,7 +198,9 @@ impl Pattern {
                 &pattern[(end_pos + 1)..]
             }
         }
-        Pattern(patterns)
+        let opt_suffix_count = subpatterns.iter().rev().take_while(|s| s.allows_zero_length()).count();
+        let opt_suffix_start_idx = subpatterns.len() - opt_suffix_count;
+        Pattern{ subpatterns, opt_suffix_start_idx }
     }
 
     pub fn find_matches<'s, 'i>(&'s self, inp: &'i str) -> Vec<&'i str> {
@@ -213,7 +230,16 @@ impl Pattern {
             if let Some(nxt) = next_to_consider {
                 match nxt {
                     Some(ns) => {
-                        next_to_check.push(ns);
+                        if ns.remaining_can_be_zero_len() {
+                            pattern_completed = true;
+                            let mut n = Some(ns);
+                            while let Some(i) = n {
+                                n = i.next_sub_pattern();
+                                next_to_check.push(i);
+                            }
+                        } else {
+                            next_to_check.push(ns);
+                        }
                     }
                     None => pattern_completed = true,
                 }   
