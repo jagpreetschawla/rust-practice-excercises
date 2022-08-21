@@ -206,6 +206,16 @@ mod test {
     }
 
     #[test]
+    fn multi_range_pattern3() {
+        PatternTest {
+            pattern: "[a-e]{1,3}[d-f]{1,3}[e-g]{2,2}",
+            inp: "adee",
+            expected: vec!["adee"],
+        }
+        .test();
+    }
+
+    #[test]
     fn multi_mixed_pattern1() {
         PatternTest {
             pattern: "[A-Z]{3,4}[1,2,3]{1,1}[a-z]{2,2}",
@@ -226,6 +236,16 @@ mod test {
     }
 
     #[test]
+    fn multi_mixed_pattern_none_or_more_middle() {
+        PatternTest {
+            pattern: "[a]{1,1}[a-z]{0,5}[#]{1,1}",
+            inp: "a# aa# abc# abcdef# abcdefg# # abc a",
+            expected: vec!["a#", "aa#", "abc#", "abcdef#"],
+        }
+        .test();
+    }
+
+    #[test]
     fn multi_mixed_pattern_none_or_more_suffix1() {
         PatternTest {
             pattern: "[a]{1,1}[a-z]{0,5}",
@@ -240,7 +260,9 @@ mod test {
         PatternTest {
             pattern: "[a]{1,1}[a-z]{0,5}[#]{0,1}",
             inp: "test aaa abcdef abcdef#, aAa#Za apple cat abcdefg lkjlkj",
-            expected: vec!["aaa", "abcdef", "abcdef#", "a", "a#", "a", "apple", "at", "abcdef"],
+            expected: vec![
+                "aaa", "abcdef", "abcdef#", "a", "a#", "a", "apple", "at", "abcdef",
+            ],
         }
         .test();
     }
