@@ -104,8 +104,8 @@ impl<'a> PatternState<'a> {
         }
     }
 
-    fn remaining_can_be_zero_len(&self) -> bool {
-        self.subpattern_index >= self.pattern.opt_suffix_start_idx
+    fn allows_zero_length(&self) -> bool {
+        self.pattern.subpatterns[self.subpattern_index].allows_zero_length()
     }
 
     fn update(mut self, c: u8) -> StateStatus<'a> {
@@ -114,7 +114,9 @@ impl<'a> PatternState<'a> {
             self.matched_count += 1;
             match subpattern.check_count(self.matched_count) {
                 MatchCountStatus::Under => StateStatus::PendingMinimumMatches(self),
-                MatchCountStatus::MaxMatch => StateStatus::ExhaustedMatchLimit(self.next_sub_pattern()),
+                MatchCountStatus::MaxMatch => {
+                    StateStatus::ExhaustedMatchLimit(self.next_sub_pattern())
+                }
                 MatchCountStatus::Over => panic!("code should never reach here, possible bug"),
                 MatchCountStatus::InRange => StateStatus::MatchInRange(self),
             }
@@ -125,9 +127,8 @@ impl<'a> PatternState<'a> {
 }
 
 #[derive(Debug)]
-pub struct Pattern{
+pub struct Pattern {
     subpatterns: Vec<SubPattern>,
-    opt_suffix_start_idx: usize
 }
 
 impl Pattern {
@@ -198,9 +199,7 @@ impl Pattern {
                 &pattern[(end_pos + 1)..]
             }
         }
-        let opt_suffix_count = subpatterns.iter().rev().take_while(|s| s.allows_zero_length()).count();
-        let opt_suffix_start_idx = subpatterns.len() - opt_suffix_count;
-        Pattern{ subpatterns, opt_suffix_start_idx }
+        Pattern { subpatterns }
     }
 
     pub fn find_matches<'s, 'i>(&'s self, inp: &'i str) -> Vec<&'i str> {
@@ -217,32 +216,31 @@ impl Pattern {
                 StateStatus::PendingMinimumMatches(s) => {
                     next_to_check.push(s);
                     None
-                },
+                }
                 StateStatus::MatchInRange(s) => {
                     let nxt = s.next_sub_pattern();
                     next_to_check.push(s);
                     Some(nxt)
-                },
+                }
                 StateStatus::ExhaustedMatchLimit(next) => Some(next),
                 StateStatus::MatchFailed => None,
             };
-            
+
             if let Some(nxt) = next_to_consider {
                 match nxt {
-                    Some(ns) => {
-                        if ns.remaining_can_be_zero_len() {
-                            pattern_completed = true;
-                            let mut n = Some(ns);
-                            while let Some(i) = n {
-                                n = i.next_sub_pattern();
-                                next_to_check.push(i);
+                    None => pattern_completed = true,
+                    mut nxt => {
+                        while let Some(s) = nxt.take() {
+                            if s.allows_zero_length() {
+                                match s.next_sub_pattern() {
+                                    None => pattern_completed = true,
+                                    i => nxt = i,
+                                }
                             }
-                        } else {
-                            next_to_check.push(ns);
+                            next_to_check.push(s);
                         }
                     }
-                    None => pattern_completed = true,
-                }   
+                }
             }
             pattern_completed
         }
@@ -251,8 +249,7 @@ impl Pattern {
         let inp_bytes = inp.as_bytes();
         while start_idx < inp_bytes.len() {
             let mut match_end_idx = None;
-            let mut active_states: Vec<PatternState> =
-                vec![PatternState::root_state(self)];
+            let mut active_states: Vec<PatternState> = vec![PatternState::root_state(self)];
             for (i, c) in inp_bytes.iter().enumerate().skip(start_idx) {
                 let mut new_states = Vec::new();
                 for s in active_states.into_iter() {
