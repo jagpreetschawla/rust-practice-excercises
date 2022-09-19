@@ -1,0 +1,4 @@
+Test test
+Valid text
+Here is invalid code: Ã(
+Some more valid text

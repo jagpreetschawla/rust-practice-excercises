@@ -1,6 +1,6 @@
-mod regex;
+mod pattern;
 
-use regex::Pattern;
+use pattern::Pattern;
 use std::{io, io::prelude::*};
 
 fn main() {
